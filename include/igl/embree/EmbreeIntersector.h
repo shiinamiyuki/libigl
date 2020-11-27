@@ -45,13 +45,10 @@ namespace igl
       Eigen::Vector3d e1 = (b - a);
       Eigen::Vector3d e2 = (c - a);
       Eigen::Vector3d n = e1.cross(e2).normalized();
-      auto intersect_triangle = [&](const Eigen::Vector3d &o, const Eigen::Vector3d &dir) -> bool {
+      auto intersect_triangle = [&](const Eigen::Vector3d &o) -> bool {
         double u, v;
-        double denom = (dir.dot(n));
-        double t = -(o - a).dot(n) / denom;
-        if (denom == 0)
-          return false;
-        p = o + t * dir;
+        double t = -(o - a).dot(n);
+        p = o + t * n;
         double det = e1.cross(e2).norm();
         auto u0 = e1.cross(p - a);
         auto v0 = (p - a).cross(e2);
@@ -61,11 +58,10 @@ namespace igl
         u = v0.norm() / det;
         if (u < 0 || v < 0 || u > 1.0000 || v > 1.0000)
           return false;
-        p = o + t * dir;
         d = std::abs(t);
         return u + v <= 1;
       };
-      if (intersect_triangle(x, n))
+      if (intersect_triangle(x))
       {
         // printf("%lf\n", d);
       }
