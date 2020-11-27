@@ -23,6 +23,7 @@
 
 #include <embree3/rtcore.h>
 #include <embree3/rtcore_ray.h>
+#include <embree3/rtcore_geometry.h>
 #include <iostream>
 #include <vector>
 
@@ -30,6 +31,67 @@ namespace igl
 {
   namespace embree
   {
+    
+    inline void point_triangle_distance(
+    const Eigen::Vector3d &x,
+    const Eigen::Vector3d &a,
+    const Eigen::Vector3d &b,
+    const Eigen::Vector3d &c,
+    double &d,
+    Eigen::Vector3d &p)
+    {
+      // Replace with your code
+      d = 0;
+      Eigen::Vector3d e1 = (b - a);
+      Eigen::Vector3d e2 = (c - a);
+      Eigen::Vector3d n = e1.cross(e2).normalized();
+      auto intersect_triangle = [&](const Eigen::Vector3d &o, const Eigen::Vector3d &dir) -> bool {
+        double u, v;
+        double denom = (dir.dot(n));
+        double t = -(o - a).dot(n) / denom;
+        if (denom == 0)
+          return false;
+        p = o + t * dir;
+        double det = e1.cross(e2).norm();
+        auto u0 = e1.cross(p - a);
+        auto v0 = (p - a).cross(e2);
+        if (u0.dot(n) < 0 || v0.dot(n) < 0)
+          return false;
+        v = u0.norm() / det;
+        u = v0.norm() / det;
+        if (u < 0 || v < 0 || u > 1.0000 || v > 1.0000)
+          return false;
+        p = o + t * dir;
+        d = std::abs(t);
+        return u + v <= 1;
+      };
+      if (intersect_triangle(x, n))
+      {
+        // printf("%lf\n", d);
+      }
+      else
+      {
+        double da = (x - a).norm();
+        double db = (x - b).norm();
+        double dc = (x - c).norm();
+        if (da < std::min(db, dc))
+        {
+          p = a;
+          d = da;
+        }
+        else if (db < std::min(da, dc))
+        {
+          p = b;
+          d = db;
+        }
+        else
+        {
+          p = c;
+          d = dc;
+        }
+      }
+    }
+
     class EmbreeIntersector
     {
     public:
@@ -52,6 +114,10 @@ namespace igl
     public:
       virtual inline ~EmbreeIntersector();
 
+      struct DistanceRecord {
+        const EmbreeIntersector * ei=nullptr;
+        int face=-1;
+      };
       // Initialize with a given mesh.
       //
       // Inputs:
@@ -165,6 +231,7 @@ namespace igl
         Hit &hit,
         int mask = 0xFFFFFFFF) const;
 
+      inline void distance(const Eigen::Vector3f & p, float & distance, int & closest_face) const;
     private:
 
       struct Vertex   {float x,y,z,a;};
@@ -286,7 +353,7 @@ inline void igl::embree::EmbreeIntersector::init(
     return;
   }
 
-  RTCBuildQuality buildQuality = isStatic ? RTC_BUILD_QUALITY_HIGH : RTC_BUILD_QUALITY_MEDIUM;
+  RTCBuildQuality buildQuality = RTC_BUILD_QUALITY_HIGH;// isStatic ? RTC_BUILD_QUALITY_HIGH : RTC_BUILD_QUALITY_MEDIUM;
 
   // create a scene
   scene = rtcNewScene(g_device);
@@ -324,8 +391,26 @@ inline void igl::embree::EmbreeIntersector::init(
 
     rtcSetGeometryMask(geom_0,masks[g]);
     rtcCommitGeometry(geom_0);
+    rtcSetGeometryPointQueryFunction(geom_0, [](RTCPointQueryFunctionArguments* args)->bool{
+      auto record = reinterpret_cast<DistanceRecord*>(args->userPtr);
+      auto ei = record->ei;
+      int index = args->primID;
+      Eigen::Vector3d v0,v1,v2;
+      v0 = Eigen::Vector3d(ei->vertices[ei->triangles[index].v0].x,ei->vertices[ei->triangles[index].v0].y,ei->vertices[ei->triangles[index].v0].z);
+      v1 = Eigen::Vector3d(ei->vertices[ei->triangles[index].v1].x,ei->vertices[ei->triangles[index].v1].y,ei->vertices[ei->triangles[index].v1].z);
+      v2 = Eigen::Vector3d(ei->vertices[ei->triangles[index].v2].x,ei->vertices[ei->triangles[index].v2].y,ei->vertices[ei->triangles[index].v2].z);
+      Eigen::Vector3d p(args->query->x,args->query->y,args->query->z), _;
+      double distance;
+      point_triangle_distance(p,v0,v1,v2, distance, _);
+      if(distance < args->query->radius){
+        args->query->radius = distance;
+        record->face = index;
+        return true;
+      }
+      return false;
+    });
   }
-
+  
   rtcCommitScene(scene);
 
   if(rtcGetDeviceError (g_device) != RTC_ERROR_NONE)
@@ -612,5 +697,18 @@ igl::embree::EmbreeIntersector
   ray.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
   ray.hit.primID = RTC_INVALID_GEOMETRY_ID;
 }
-
+inline void 
+igl::embree::EmbreeIntersector::distance(const Eigen::Vector3f & p, float & distance, int & closest_face) const{
+  RTCPointQueryContext context;
+  rtcInitPointQueryContext(&context);
+  RTCPointQuery query;
+  query.x = p.x();
+  query.y = p.y();
+  query.z = p.z();
+  query.radius = std::numeric_limits<float>::infinity();
+  DistanceRecord record{this, -1};
+  rtcPointQuery(scene, &query,&context,nullptr, &record);
+  distance = query.radius;
+  closest_face = record.face;
+}
 #endif //EMBREE_INTERSECTOR_H
