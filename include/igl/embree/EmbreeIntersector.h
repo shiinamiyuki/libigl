@@ -702,7 +702,9 @@ igl::embree::EmbreeIntersector::distance(const Eigen::Vector3f & p, float & dist
   query.y = p.y();
   query.z = p.z();
   query.radius = std::numeric_limits<float>::infinity();
-  DistanceRecord record{this, -1};
+  DistanceRecord record;
+  record.ei = this;
+  record.face = -1;
   rtcPointQuery(scene, &query,&context,nullptr, &record);
   distance = query.radius;
   closest_face = record.face;
