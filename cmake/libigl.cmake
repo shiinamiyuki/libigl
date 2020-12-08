@@ -317,7 +317,7 @@ if(LIBIGL_WITH_EMBREE)
   compile_igl_module("embree")
   target_link_libraries(igl_embree ${IGL_SCOPE} embree embree_sse42 embree_avx embree_avx2)
   target_include_directories(igl_embree ${IGL_SCOPE} ${EMBREE_DIR}/include)
-  target_compile_definitions(igl_embree ${IGL_SCOPE} -DEMBREE_STATIC_LIB)
+  target_compile_definitions(igl_embree ${IGL_SCOPE} -DEMBREE_STATIC_LIB -DIGL_ENABLE_EMBREE)
 endif()
 
 ################################################################################
